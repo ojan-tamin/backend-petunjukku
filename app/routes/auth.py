@@ -2,9 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, get_db
-from app.core.security import create_access_token
 from app.schemas.auth import TokenResponse, UserCreate, UserLogin, UserResponse
-from app.services.auth_service import authenticate_user, create_user, get_user_by_email
+from app.services.auth_service import (
+    SupabaseAuthError,
+    sign_in_user,
+    sign_up_user,
+    sync_user_profile,
+)
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -13,28 +17,44 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
     "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
 )
 def register(user_in: UserCreate, db: Session = Depends(get_db)):
-    existing_user = get_user_by_email(db, user_in.email)
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
-        )
+    try:
+        auth_response = sign_up_user(user_in)
+        auth_user = auth_response.get("user")
 
-    user = create_user(db, user_in)
-    return user
+        if not auth_user:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Supabase Auth tidak mengembalikan user baru.",
+            )
+
+        return sync_user_profile(db, auth_user, fallback_profile=user_in)
+    except SupabaseAuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.post("/login", response_model=TokenResponse)
 def login(user_in: UserLogin, db: Session = Depends(get_db)):
-    user = authenticate_user(db, user_in.email, user_in.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-        )
+    try:
+        auth_response = sign_in_user(user_in)
+        auth_user = auth_response.get("user")
+        access_token = auth_response.get("access_token")
 
-    access_token = create_access_token(subject=user.id)
-    return TokenResponse(access_token=access_token)
+        if not auth_user or not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Supabase Auth tidak mengembalikan session login yang valid.",
+            )
+
+        sync_user_profile(db, auth_user)
+
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=auth_response.get("refresh_token"),
+            expires_in=auth_response.get("expires_in"),
+            token_type=auth_response.get("token_type", "bearer"),
+        )
+    except SupabaseAuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.get("/me", response_model=UserResponse)

@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     debug: bool = True
 
     database_url: str
+    supabase_url: str = ""
+    supabase_anon_key: str = ""
 
     secret_key: str
     algorithm: str = "HS256"

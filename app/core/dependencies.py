@@ -1,13 +1,16 @@
 from collections.abc import Generator
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.user import User
+from app.services.auth_service import (
+    SupabaseAuthError,
+    get_supabase_user,
+    sync_user_profile,
+)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
@@ -25,31 +28,10 @@ def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     try:
-        payload = jwt.decode(
-            token,
-            settings.secret_key,
-            algorithms=[settings.algorithm],
-        )
-        user_id: str = payload.get("sub")
-
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
-            )
-
-    except JWTError:
+        auth_user = get_supabase_user(token)
+        return sync_user_profile(db, auth_user)
+    except SupabaseAuthError as exc:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-        )
-
-    user = db.query(User).filter(User.id == user_id).first()
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-        )
-
-    return user
+            status_code=exc.status_code,
+            detail=exc.detail,
+        ) from exc
