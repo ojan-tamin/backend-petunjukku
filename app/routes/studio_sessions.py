@@ -1,52 +1,142 @@
+"""Studio session routes for workflow inspection, planning updates, and finalization."""
+
+from __future__ import annotations
+
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_current_user, get_db
-from app.models.user import User
-from app.schemas.studio_session import StudioSessionCreate, StudioSessionResponse
+from app.models.enums import WorkflowTypeEnum
+from app.core.dependencies import get_db
+from app.schemas.studio_session import (
+    PlanningStateUpdateRequest,
+    SessionServiceHealthResponse,
+    StudioSessionCreateRequest,
+    StudioSessionDetailResponse,
+    StudioSessionFinalizationResponse,
+    StudioSessionSeedPreview,
+    StudioSessionSeedRequest,
+    WorkflowDefinitionResponse,
+    WorkflowSummary,
+)
 from app.services.session_service import (
+    build_session_preview,
     create_studio_session,
-    get_session_by_id,
-    get_user_sessions,
+    finalize_studio_session,
+    get_studio_session_detail,
+    get_service_health,
+    get_workflow_definition,
+    list_workflow_summaries,
+    SessionNotFoundError,
+    SessionServiceError,
+    SessionValidationError,
+    update_studio_session_planning_state,
 )
 
-router = APIRouter(prefix="/studio/sessions", tags=["Studio Sessions"])
+router = APIRouter(prefix="/studio-sessions", tags=["studio-sessions"])
 
 
-@router.post(
-    "", response_model=StudioSessionResponse, status_code=status.HTTP_201_CREATED
-)
-def create_session(
-    session_in: StudioSessionCreate,
+@router.get("/health", response_model=SessionServiceHealthResponse)
+def studio_session_health() -> SessionServiceHealthResponse:
+    return SessionServiceHealthResponse.model_validate(get_service_health())
+
+
+@router.get("/workflows", response_model=list[WorkflowSummary])
+def read_workflow_summaries() -> list[WorkflowSummary]:
+    return [
+        WorkflowSummary.model_validate(workflow_summary)
+        for workflow_summary in list_workflow_summaries()
+    ]
+
+
+@router.get("/workflows/{workflow_type}", response_model=WorkflowDefinitionResponse)
+def read_workflow_definition(
+    workflow_type: WorkflowTypeEnum,
+) -> WorkflowDefinitionResponse:
+    return WorkflowDefinitionResponse.model_validate(
+        get_workflow_definition(workflow_type)
+    )
+
+
+@router.post("/preview", response_model=StudioSessionSeedPreview)
+def preview_studio_session(
+    payload: StudioSessionSeedRequest,
+) -> StudioSessionSeedPreview:
+    return StudioSessionSeedPreview.model_validate(
+        build_session_preview(
+            title=payload.title,
+            workflow_type=payload.workflow_type,
+        )
+    )
+
+
+@router.post("", response_model=StudioSessionDetailResponse)
+def create_studio_session_route(
+    payload: StudioSessionCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    session = create_studio_session(db, current_user, session_in)
-    return session
+) -> StudioSessionDetailResponse:
+    try:
+        return StudioSessionDetailResponse.model_validate(
+            create_studio_session(
+                db,
+                workflow_type=payload.workflow_type,
+                title=payload.title,
+                user_email=payload.user_email,
+                user_display_name=payload.user_display_name,
+            )
+        )
+    except SessionServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("", response_model=list[StudioSessionResponse])
-def list_sessions(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    return get_user_sessions(db, current_user)
-
-
-@router.get("/{session_id}", response_model=StudioSessionResponse)
-def get_session_detail(
+@router.get("/{session_id}", response_model=StudioSessionDetailResponse)
+def read_studio_session(
     session_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    session = get_session_by_id(db, current_user, session_id)
-
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found",
+) -> StudioSessionDetailResponse:
+    try:
+        return StudioSessionDetailResponse.model_validate(
+            get_studio_session_detail(db, session_id)
         )
+    except SessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    return session
+
+@router.patch("/{session_id}/planning-state", response_model=StudioSessionDetailResponse)
+def update_planning_state(
+    session_id: UUID,
+    payload: PlanningStateUpdateRequest,
+    db: Session = Depends(get_db),
+) -> StudioSessionDetailResponse:
+    try:
+        return StudioSessionDetailResponse.model_validate(
+            update_studio_session_planning_state(
+                db,
+                session_id=session_id,
+                collected_fields=payload.collected_fields,
+                advance_stage=payload.advance_stage,
+            )
+        )
+    except SessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SessionValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{session_id}/finalize", response_model=StudioSessionFinalizationResponse)
+def finalize_studio_session_route(
+    session_id: UUID,
+    db: Session = Depends(get_db),
+) -> StudioSessionFinalizationResponse:
+    try:
+        return StudioSessionFinalizationResponse.model_validate(
+            finalize_studio_session(
+                db,
+                session_id=session_id,
+            )
+        )
+    except SessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SessionValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

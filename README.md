@@ -1,626 +1,356 @@
-# Petunjukku Backend
+# backend-petunjukku
 
-Backend API untuk aplikasi Petunjukku yang dibangun dengan FastAPI, SQLAlchemy, PostgreSQL, dan Alembic.
+`backend-petunjukku` is the rewritten FastAPI backend foundation for PetunjukKU. It is intentionally narrower than the old monorepo and limited to the concerns requested for this phase: application structure, configuration, database setup, migration readiness, YAML workflow contracts, and import-safe boundaries for future auth and session work.
 
-Dokumentasi ini menjelaskan gambaran codebase, struktur folder, alur request, model data, endpoint yang tersedia, dan cara menjalankan proyek.
+## Scope of this phase
 
-## Ringkasan
+Included:
 
-Project ini adalah backend untuk workflow penyusunan dokumen pembelajaran. Saat ini fondasi utama yang sudah aktif adalah:
+- FastAPI entry point in `app/main.py`
+- centralized settings in `app/core/config.py`
+- centralized database engine and session factory in `app/db/session.py`
+- SQLAlchemy domain models for users, sessions, messages, planning state, documents, audio, and AI logs
+- Alembic migration wiring and a baseline migration
+- YAML AI workflow contracts for `intrakurikuler` and `pjbl`
+- minimal auth and session route boundaries that are runnable now
+- local LLM inspection and inference boundary under `app/routes/local_llm.py`
 
-- autentikasi user dengan JWT
-- pembuatan akun dan login
-- pembuatan dan pengambilan studio session
-- inisialisasi planning state berdasarkan tipe dokumen
+Deferred:
 
-Selain itu, codebase juga sudah menyiapkan model untuk:
+- production auth flow
+- voice flow
+- external AI provider integrations
+- DirectML-ready ONNX Runtime GenAI model export for Gemma
 
-- pesan percakapan studio
-- hasil dokumen yang digenerate
-- rekaman audio dan transkripsi
-- log interaksi AI
-
-Artinya, arsitektur domain sudah disiapkan untuk fitur yang lebih besar, walaupun route yang aktif masih fokus di auth dan session.
-
-## Stack Teknologi
-
-- FastAPI untuk HTTP API
-- SQLAlchemy 2.x untuk ORM
-- PostgreSQL sebagai database utama
-- Alembic untuk migrasi schema
-- Pydantic Settings untuk konfigurasi environment
-- `python-jose` untuk JWT
-- `passlib` dengan bcrypt untuk hashing password
-
-## Struktur Folder
+## Project structure
 
 ```text
-.
-├── alembic/              # konfigurasi dan file migrasi database
-├── app/
-│   ├── core/             # config, security, dependency injection
-│   ├── db/               # SQLAlchemy base dan session
-│   ├── models/           # model ORM / tabel database
-│   ├── routes/           # endpoint FastAPI
-│   ├── schemas/          # schema request dan response
-│   ├── services/         # business logic
-│   └── main.py           # entry point aplikasi
-├── .env                  # environment variables lokal
-├── requirements.txt      # dependency Python
-└── test.py               # helper kecil untuk cek metadata model
+backend-petunjukku/
+|-- alembic/
+|   |-- env.py
+|   |-- README
+|   |-- script.py.mako
+|   `-- versions/
+|-- app/
+|   |-- ai_contracts/
+|   |-- core/
+|   |-- db/
+|   |-- models/
+|   |-- routes/
+|   |-- schemas/
+|   |-- services/
+|   |-- __init__.py
+|   `-- main.py
+|-- docs/
+|-- .env.example
+|-- .gitignore
+|-- alembic.ini
+|-- README.md
+|-- requirements.txt
+`-- test.py
 ```
 
-## Arsitektur Singkat
+## Setup
 
-Pola codebase mengikuti pembagian tanggung jawab yang cukup bersih:
+1. Create and activate a virtual environment.
 
-- `routes` menangani HTTP request/response
-- `schemas` memvalidasi payload input dan output
-- `services` menyimpan business logic
-- `models` merepresentasikan tabel dan relasi database
-- `core` menyimpan konfigurasi, auth, dan dependencies
-- `db` menyimpan inisialisasi base dan session SQLAlchemy
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
 
-Alur umumnya:
+2. Install dependencies.
 
-1. Request masuk ke route FastAPI.
-2. FastAPI memvalidasi body/query lewat schema Pydantic.
-3. Route memanggil service.
-4. Service membaca/menulis data lewat SQLAlchemy session.
-5. Response dikembalikan memakai schema response.
+```powershell
+pip install -r requirements.txt
+```
 
-## Entry Point Aplikasi
+3. Create the local environment file.
 
-File utama aplikasi ada di `app/main.py`.
+```powershell
+Copy-Item .env.example .env
+```
 
-Tanggung jawabnya:
+The default configuration uses SQLite so the app can run immediately. For PostgreSQL, replace `DATABASE_URL` with a `postgresql+psycopg://...` DSN.
 
-- membuat instance FastAPI
-- memasang router `auth` dan `studio_sessions`
-- menyediakan endpoint health check
+## Environment variables
 
-Endpoint dasar yang tersedia dari file ini:
-
-- `GET /`
-- `GET /health`
-- `GET /health/db`
-
-## Konfigurasi Environment
-
-Konfigurasi dibaca dari `.env` melalui `app/core/config.py`.
-
-Variabel yang dipakai saat ini:
+Only variables used by the current implementation are included:
 
 - `APP_NAME`
 - `APP_ENV`
 - `DEBUG`
+- `API_V1_PREFIX`
 - `DATABASE_URL`
-- `SECRET_KEY`
-- `ALGORITHM`
-- `ACCESS_TOKEN_EXPIRE_MINUTES`
-
-Contoh `.env` lokal:
-
-```env
-APP_NAME=Petunjukku Backend
-APP_ENV=development
-DEBUG=true
-DATABASE_URL=postgresql+psycopg2://postgres:password@localhost:5432/petunjukku_db
-SECRET_KEY=change-this-secret
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-```
-
-## Database Layer
-
-### SQLAlchemy Base
-
-`app/db/base.py` mendefinisikan `Base` sebagai parent untuk semua model ORM.
-
-### Session dan Engine
-
-`app/db/session.py` membuat:
-
-- `engine` dari `settings.database_url`
-- `SessionLocal` untuk dipakai pada setiap request
-
-### Dependency Database
-
-`app/core/dependencies.py` menyediakan `get_db()` yang:
-
-- membuka database session saat request dimulai
-- menutup session setelah request selesai
-
-## Authentication
-
-Sistem auth memakai JWT bearer token.
-
-Komponen utamanya:
-
-- `app/core/security.py`
-- `app/core/dependencies.py`
-- `app/routes/auth.py`
-- `app/services/auth_service.py`
-
-### Cara Kerja
-
-#### Register
-
-1. Client mengirim data user ke `POST /auth/register`.
-2. Route mengecek apakah email sudah terdaftar.
-3. Password di-hash dengan bcrypt.
-4. User baru disimpan ke tabel `users`.
-
-#### Login
-
-1. Client mengirim email dan password ke `POST /auth/login`.
-2. Service mencari user berdasarkan email.
-3. Password plaintext diverifikasi terhadap `password_hash`.
-4. Jika valid, backend membuat JWT access token.
-5. Token dikembalikan dalam response.
-
-#### Get Current User
-
-1. Client mengirim bearer token.
-2. Dependency `get_current_user()` mendecode JWT.
-3. Nilai `sub` pada token dipakai sebagai `user_id`.
-4. User diambil dari database.
-5. Jika token invalid atau user tidak ada, request ditolak dengan `401`.
-
-## Studio Session
-
-Studio session adalah unit kerja utama untuk proses penyusunan dokumen.
-
-Route yang tersedia:
-
-- `POST /studio/sessions`
-- `GET /studio/sessions`
-- `GET /studio/sessions/{session_id}`
-
-Semua route ini membutuhkan user yang sudah login.
-
-### Cara Kerja Pembuatan Session
-
-Saat user membuat session baru:
-
-1. Backend menerima `title` dan `document_type`.
-2. Service menentukan `current_stage` awal berdasarkan tipe dokumen.
-3. Record baru dibuat di tabel `studio_sessions`.
-4. Backend langsung membuat `planning_states` untuk session tersebut.
-5. `state_data` awal diisi sesuai workflow tipe dokumen.
-
-### Tipe Dokumen
-
-Saat ini ada dua tipe dokumen:
-
-- `intrakurikuler`
-- `pjbl`
-
-### Initial Stage
-
-Initial stage ditentukan oleh `get_initial_stage()`:
-
-- `intrakurikuler` -> `intra_stage_1_learning_brief`
-- `pjbl` -> `pjbl_stage_1_identity_context`
-
-### Initial Planning State
-
-`planning_state.state_data` berbentuk JSONB dan berisi struktur workflow.
-
-Contoh field tingkat atas untuk `intrakurikuler`:
-
-- `meta`
-- `learning_brief`
-- `curriculum`
-- `classroom_context`
-- `problem_definition`
-- `strategy`
-
-Contoh field tingkat atas untuk `pjbl`:
-
-- `meta`
-- `identity_context`
-- `goals_driving_question`
-- `project_execution`
-- `assessment_guardrails`
-- `resources_finalize`
-
-## Model Data
-
-Berikut model yang ada di codebase.
-
-### 1. User
-
-Tabel: `users`
-
-Menyimpan data akun:
-
-- `id`
-- `full_name`
-- `email`
-- `password_hash`
-- `school_name`
-- `role`
-- `created_at`
-- `updated_at`
-
-Relasi:
-
-- satu user punya banyak `studio_sessions`
-- satu user punya banyak `generated_documents`
-
-### 2. StudioSession
-
-Tabel: `studio_sessions`
-
-Menyimpan container utama aktivitas user:
-
-- `id`
-- `user_id`
-- `title`
-- `document_type`
-- `current_stage`
-- `status`
-- `completion_score`
-- `last_message_at`
-- `created_at`
-- `updated_at`
-
-Relasi:
-
-- milik satu `user`
-- punya banyak `messages`
-- punya satu `planning_state`
-- punya banyak `generated_documents`
-- punya banyak `audio_records`
-- punya banyak `ai_logs`
-
-### 3. PlanningState
-
-Tabel: `planning_states`
-
-Menyimpan state progres workflow per session:
-
-- `session_id`
-- `document_type`
-- `state_data` dalam format JSONB
-- `completion_score`
-- `is_ready_for_summary`
-- `is_ready_for_generation`
-- `version`
-
-Karena memakai JSONB, struktur state bisa fleksibel tanpa perlu banyak tabel tambahan.
-
-### 4. StudioMessage
-
-Tabel: `studio_messages`
-
-Disiapkan untuk menyimpan percakapan dalam sebuah session:
-
-- `sender_type`
-- `message_type`
-- `message_text`
-- `sequence_number`
-
-Ada unique constraint pada kombinasi:
-
-- `session_id`
-- `sequence_number`
-
-Ini mencegah urutan pesan ganda dalam satu session.
-
-### 5. GeneratedDocument
-
-Tabel: `generated_documents`
-
-Disiapkan untuk menyimpan hasil dokumen yang dibentuk dari planning state:
-
-- `content_json`
-- `content_markdown`
-- `status`
-- `version`
-- `generated_from_state_version`
-
-### 6. AudioRecord
-
-Tabel: `audio_records`
-
-Disiapkan untuk upload audio, penyimpanan metadata file, dan hasil transkripsi:
-
-- `file_path`
-- `mime_type`
-- `duration_seconds`
-- `transcript_text`
-- `transcription_status`
-
-### 7. AILog
-
-Tabel: `ai_logs`
-
-Disiapkan untuk audit/logging proses AI:
-
-- `step_name`
-- `model_name`
-- `prompt_text`
-- `response_text`
-- `input_payload`
-- `output_payload`
-- `latency_ms`
-
-Model ini berguna untuk observability, debugging, dan pelacakan output AI.
-
-## Enum Domain
-
-Beberapa enum penting yang dipakai:
-
-### `DocumentTypeEnum`
-
-- `intrakurikuler`
-- `pjbl`
-
-### `SessionStatusEnum`
-
-- `active`
-- `review`
-- `completed`
-- `archived`
-
-### `SenderTypeEnum`
-
-- `user`
-- `assistant`
-- `system`
-
-### `MessageTypeEnum`
-
-- `text`
-- `voice_transcript`
-- `summary`
-- `revision_note`
-
-### `DocumentStatusEnum`
-
-- `draft`
-- `final`
-- `revised`
-
-### `TranscriptionStatusEnum`
-
-- `pending`
-- `success`
-- `failed`
-
-## Schema Request dan Response
-
-Schema Pydantic ada di folder `app/schemas`.
-
-### Auth Schema
-
-- `UserCreate` untuk register
-- `UserLogin` untuk login
-- `UserResponse` untuk response data user
-- `TokenResponse` untuk JWT response
-
-### Studio Session Schema
-
-- `StudioSessionCreate` untuk membuat session
-- `StudioSessionResponse` untuk response data session
-
-Schema response memakai `from_attributes = True`, jadi object ORM SQLAlchemy bisa langsung di-serialize ke response Pydantic.
-
-## Endpoint API
-
-### Health
-
-#### `GET /`
-
-Mengembalikan pesan sederhana bahwa backend berjalan.
-
-#### `GET /health`
-
-Mengembalikan:
-
-- status app
-- nama aplikasi
-- environment
-
-#### `GET /health/db`
-
-Menjalankan query `SELECT 1` untuk memastikan database bisa diakses.
-
-### Auth
-
-#### `POST /auth/register`
-
-Request body:
-
-```json
-{
-  "full_name": "Budi Santoso",
-  "email": "budi@example.com",
-  "password": "secret123",
-  "school_name": "SMA Nusantara"
-}
-```
-
-Response:
-
-- data user yang berhasil dibuat
-
-#### `POST /auth/login`
-
-Request body:
-
-```json
-{
-  "email": "budi@example.com",
-  "password": "secret123"
-}
-```
-
-Response:
-
-```json
-{
-  "access_token": "jwt-token",
-  "token_type": "bearer"
-}
-```
-
-#### `GET /auth/me`
-
-Header:
-
-```http
-Authorization: Bearer <access_token>
-```
-
-Response:
-
-- data user saat ini
-
-### Studio Sessions
-
-#### `POST /studio/sessions`
-
-Header:
-
-```http
-Authorization: Bearer <access_token>
-```
-
-Request body:
-
-```json
-{
-  "title": "RPP IPA Kelas 7",
-  "document_type": "intrakurikuler"
-}
-```
-
-Response:
-
-- data session yang baru dibuat
-
-#### `GET /studio/sessions`
-
-Mengambil semua session milik user yang sedang login, diurutkan dari `updated_at` terbaru.
-
-#### `GET /studio/sessions/{session_id}`
-
-Mengambil detail satu session milik user. Jika session tidak ditemukan atau bukan milik user, backend mengembalikan `404`.
-
-## Migrasi Database
-
-Migrasi database dikelola lewat Alembic.
-
-File penting:
-
-- `alembic/env.py`
-- `alembic.ini`
-- `alembic/versions/28d77849332c_create_initial_tables.py`
-
-`alembic/env.py` melakukan dua hal penting:
-
-- memuat semua model agar metadata terbaca
-- mengambil `DATABASE_URL` dari `.env`
-
-Migrasi awal membuat tabel:
-
-- `users`
-- `studio_sessions`
-- `planning_states`
-- `studio_messages`
-- `generated_documents`
-- `audio_records`
-- `ai_logs`
-
-## Cara Menjalankan Project
-
-### 1. Buat virtual environment
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-### 2. Install dependency
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Siapkan PostgreSQL
-
-Buat database sesuai `DATABASE_URL`, misalnya:
-
-```text
-petunjukku_db
-```
-
-### 4. Jalankan migrasi
-
-```bash
+- `SQL_ECHO`
+- `CORS_ALLOW_ORIGINS`
+- `LOCAL_LLM_ENABLED`
+- `LOCAL_LLM_BACKEND`
+- `LOCAL_LLM_PROVIDER`
+- `LOCAL_LLM_MODEL_PATH`
+- `LOCAL_LLM_DEVICE`
+- `LOCAL_LLM_MAX_NEW_TOKENS`
+- `LOCAL_LLM_TEMPERATURE`
+- `LOCAL_LLM_TOP_P`
+
+## Database and Alembic
+
+Run the baseline migration:
+
+```powershell
 alembic upgrade head
 ```
 
-### 5. Jalankan server
+Create a new migration after model changes:
 
-```bash
+```powershell
+alembic revision --autogenerate -m "describe change"
+```
+
+Roll back one revision:
+
+```powershell
+alembic downgrade -1
+```
+
+## Running the app
+
+```powershell
 uvicorn app.main:app --reload
 ```
 
-Jika berhasil, API biasanya tersedia di:
+Useful endpoints:
 
-- `http://127.0.0.1:8000`
-- docs Swagger: `http://127.0.0.1:8000/docs`
+- `GET /health`
+- `GET /health/ready`
+- `GET /api/v1/auth/health`
+- `GET /api/v1/local-llm/status`
+- `POST /api/v1/local-llm/chat`
+- `GET /api/v1/studio-sessions/health`
+- `GET /api/v1/studio-sessions/workflows`
+- `GET /api/v1/studio-sessions/workflows/{workflow_type}`
+- `POST /api/v1/studio-sessions/preview`
+- `POST /api/v1/studio-sessions`
+- `GET /api/v1/studio-sessions/{session_id}`
+- `PATCH /api/v1/studio-sessions/{session_id}/planning-state`
+- `POST /api/v1/studio-sessions/{session_id}/finalize`
 
-## Status Implementasi Saat Ini
+## Local Gemma integration
 
-Fitur yang sudah aktif:
+The local LLM integration lives inside the existing backend structure:
 
-- auth register
-- auth login
-- current user
-- create session
-- list session
-- get session detail
+- `app/core/config.py` centralizes all local runtime settings
+- `app/core/dependencies.py` exposes `get_local_llm_service()`
+- `app/services/local_llm_service.py` inspects the model path, chooses the runtime, and runs inference
+- `app/routes/local_llm.py` exposes the status and chat endpoints
+- `app/schemas/local_llm.py` defines the request and response contracts
 
-Fitur yang modelnya sudah ada tetapi route/service lengkapnya belum terlihat dipakai:
+### Runtime strategy used by this repo
 
-- manajemen chat/message
-- upload audio dan transkripsi
-- generasi dokumen
-- logging proses AI
-- update planning state per tahap
+The service always inspects the configured model path before it chooses a runtime:
 
-## Catatan Teknis
+- If the folder contains `genai_config.json` and compatible `.onnx` artifacts, the preferred path is `onnxruntime-genai` with `DirectML` when the matching DirectML package is installed.
+- If the path points to a `.gguf` model, the service uses `llama-cpp-python` locally inside the FastAPI backend.
+- If the folder contains Hugging Face `safetensors` weights, the service does not pretend DirectML is active. It falls back to a local `transformers` runtime with `optimum-quanto` int4 loading and disk offload.
+- If a fallback runtime still cannot load the checkpoint, the API returns `load_success: false` and surfaces the actual load error instead of claiming GPU acceleration.
 
-- Codebase ini sangat bergantung pada PostgreSQL karena memakai tipe `JSONB` dan `UUID` PostgreSQL.
-- `requirements.txt` saat ini berisi banyak dependency yang tampaknya tidak relevan langsung dengan backend FastAPI ini, jadi bisa dipertimbangkan untuk dirapikan.
-- Belum ada suite testing yang jelas untuk API atau service layer.
-- Saat register, role user masih diset statis menjadi `teacher`.
+### Current local runtime in this project
 
-## Saran Pengembangan Selanjutnya
+This project environment now uses the requested local model in a quantized GGUF form that has been tested successfully:
 
-- tambah `README` khusus setup development dan deployment
-- tambah dokumentasi ERD atau diagram relasi tabel
-- tambah endpoint untuk chat/message dan update planning state
-- tambah test untuk auth dan studio session
-- rapikan dependency project agar lebih fokus
+- source model family: `gemma2-9b-cpt-sahabatai-v1-instruct`
+- configured model path: `.local_llm_models/gemma2-9b-cpt-sahabatai-v1-instruct.Q4_K_M.gguf`
+- runtime backend: `llama-cpp`
+- provider: `cpu`
+- `gpu_path_active`: `false`
+- quantization: `Q4_K_M`
+- tested result on this machine: the chat endpoint returns a real answer
 
-## Referensi File Penting
+### Original raw checkpoint audit
 
-- `app/main.py`
-- `app/core/config.py`
-- `app/core/security.py`
-- `app/core/dependencies.py`
-- `app/db/base.py`
-- `app/db/session.py`
-- `app/routes/auth.py`
-- `app/routes/studio_sessions.py`
-- `app/services/auth_service.py`
-- `app/services/session_service.py`
-- `app/models/`
-- `alembic/env.py`
+The original local checkpoint path that was inspected first was:
 
+- `C:/Users/amrah/Documents/GitHub/gemma2-9b-cpt-sahabatai-v1-instruct`
+
+Findings for the raw checkpoint:
+
+- `genai_config.json` is not present
+- `.onnx` model files are not present
+- the folder contains sharded `safetensors`
+- the checkpoint metadata reports about `18.48 GB` of model weights
+- this is not DirectML-ready for ONNX Runtime GenAI in its current format
+- on this `16 GB` Windows machine, loading it locally as raw `safetensors` is not safe
+
+That original raw 9B checkpoint is still not runnable in this environment as-is. To make the requested model work end-to-end now, the project uses a local `GGUF` quantization of the same model family instead of the raw `safetensors` checkpoint.
+
+### Configure the local model
+
+Example PowerShell environment setup:
+
+```powershell
+$env:LOCAL_LLM_ENABLED = "true"
+$env:LOCAL_LLM_BACKEND = "auto"
+$env:LOCAL_LLM_PROVIDER = "auto"
+$env:LOCAL_LLM_MODEL_PATH = "C:/Users/amrah/Documents/GitHub/backend-petunjukku/.local_llm_models/gemma2-9b-cpt-sahabatai-v1-instruct.Q4_K_M.gguf"
+$env:LOCAL_LLM_DEVICE = "auto"
+$env:LOCAL_LLM_MAX_NEW_TOKENS = "256"
+$env:LOCAL_LLM_TEMPERATURE = "0.2"
+$env:LOCAL_LLM_TOP_P = "0.9"
+```
+
+The tested install path for the Python runtime in this environment uses the Windows CPython 3.12 wheel from the official `abetlen/llama-cpp-python` releases. That dependency is already pinned in `requirements.txt` for this exact project environment.
+
+### Download the working Gemma model
+
+If the GGUF file is not already present, download the tested 9B quantized file into the project-local cache folder:
+
+```powershell
+@'
+from huggingface_hub import hf_hub_download
+from pathlib import Path
+
+path = hf_hub_download(
+    repo_id="gmonsoon/gemma2-9b-cpt-sahabatai-v1-instruct-GGUF",
+    filename="gemma2-9b-cpt-sahabatai-v1-instruct.Q4_K_M.gguf",
+    local_dir=str(Path(".local_llm_models").resolve()),
+)
+print(path)
+'@ | .\.venv\Scripts\python -
+```
+
+### Test the integration
+
+Inspect the resolved runtime without loading the model:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/local-llm/status"
+```
+
+Send a chat request:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/local-llm/chat" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body '{"message":"Jelaskan tujuan backend ini secara singkat.","system_prompt":"Jawab singkat."}'
+```
+
+Expected response shape:
+
+```json
+{
+  "answer": "Saya adalah model bahasa yang dapat membantu menjawab pertanyaan dan memberikan informasi dalam bahasa Indonesia.",
+  "backend": "llama-cpp",
+  "provider": "cpu",
+  "model_path": "C:/path/to/model",
+  "device": "cpu",
+  "gpu_path_active": false,
+  "load_success": true,
+  "model_format": "gguf",
+  "fallback_required": true,
+  "directml_viable": false,
+  "load_error": null
+}
+```
+
+### How to verify DirectML honestly
+
+Use `GET /api/v1/local-llm/status` and inspect these fields:
+
+- `directml_viable`: `true` only when the model path is an ONNX Runtime GenAI export with the expected artifacts
+- `provider`: `directml` only when the service actually loaded a DirectML-capable ORT runtime
+- `gpu_path_active`: `true` only when the active runtime confirms a GPU-backed execution path
+
+If the current model is a GGUF file loaded through `llama-cpp-python`, the service should still report `directml_viable: false`, `provider: cpu`, and `gpu_path_active: false`.
+
+### Fallback behavior
+
+If DirectML is unavailable for the inspected model path, the backend keeps the same API contract and falls back to a local runtime:
+
+- `llama-cpp` for GGUF
+- `transformers` for Hugging Face `safetensors`
+
+To make DirectML possible later, point `LOCAL_LLM_MODEL_PATH` to a real ONNX Runtime GenAI export that includes `genai_config.json` plus compatible ONNX artifacts, then install only the matching `onnxruntime-genai-directml` package in that environment.
+
+## AI contracts
+
+The current workflow contracts live in:
+
+- `app/ai_contracts/stage_definitions.yaml`
+- `app/ai_contracts/planning_state_example.yaml`
+
+The session service reads these YAML files to validate workflows, expose stage metadata through the API, and derive the initial planning-state shape for future persisted sessions.
+
+## Planning state and PJBL finalization
+
+`PlanningState` stays hybrid by design:
+
+- system fields remain real database columns: `workflow_type`, `current_stage`, `completion_score`, `is_ready_for_summary`, `is_ready_for_generation`, and `version`
+- domain fields remain in `collected_fields` JSON
+- `missing_fields` is recalculated from the YAML workflow contract on every planning update
+
+The `pjbl` contract now supports these official field groups inside `collected_fields`:
+
+- Stage 1: `education_level`, `phase`, `grade_level`, `subject_or_theme`, `topic`, `duration`, `school_context`, `student_characteristics`, `project_theme`
+- Stage 2: `problem_context`, `project_objectives`, `target_competencies`, `character_values`, `six_c_elements`
+- Stage 3: `project_title`, `driving_question`, `project_stages`, `grouping_strategy`, `student_roles`, `final_product`
+- Stage 4: `assessment_focus`, `assessment_rubric`, `process_indicators`, `product_indicators`, `resources_needed`, `tools_materials`, `teacher_facilitation_plan`, `reflection_prompt`, `follow_up_plan`
+
+The planning flow now works end-to-end:
+
+1. `POST /api/v1/studio-sessions` creates a persisted `StudioSession` plus its initial `PlanningState`.
+2. `PATCH /api/v1/studio-sessions/{session_id}/planning-state` merges new `collected_fields`, recalculates `missing_fields`, advances stage when ready, and updates readiness flags.
+3. `POST /api/v1/studio-sessions/{session_id}/finalize` validates `is_ready_for_generation`, then writes a real `generated_documents` row linked to the session and user.
+
+Example session creation:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/studio-sessions" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body '{"title":"PjBL Sampah Sekolah","workflow_type":"pjbl","user_email":"guru@local","user_display_name":"Guru Lokal"}'
+```
+
+Example planning update:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/studio-sessions/<SESSION_ID>/planning-state" `
+  -Method Patch `
+  -ContentType "application/json" `
+  -Body '{"collected_fields":{"education_level":"SMP","phase":"D","grade_level":"Kelas 8","subject_or_theme":"IPA","topic":"Sampah","duration":"4 minggu","school_context":"Sekolah urban","student_characteristics":["kolaboratif"],"project_theme":"Sekolah minim sampah"}}'
+```
+
+Example finalization:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/studio-sessions/<SESSION_ID>/finalize" `
+  -Method Post
+```
+
+The finalization response includes both the refreshed session and the newly created `generated_document`. For `pjbl`, the document kind is `project_plan`.
+
+## Smoke verification
+
+After running migrations:
+
+```powershell
+python test.py
+```
+
+The smoke script verifies:
+
+- the FastAPI app imports cleanly
+- database connectivity works
+- the expected baseline tables exist
+- workflow contracts load and validate
+- the verification endpoints respond successfully
+- the local LLM status endpoint responds with an inspection payload
+
+## Migration documentation
+
+- `docs/migration_audit.md`
+- `docs/migration_notes.md`

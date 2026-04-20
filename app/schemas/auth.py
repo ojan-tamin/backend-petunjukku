@@ -1,30 +1,18 @@
-from uuid import UUID
+"""Auth schemas for the deferred foundation boundary."""
 
-from pydantic import BaseModel, EmailStr, Field
+from __future__ import annotations
 
-
-class UserCreate(BaseModel):
-    full_name: str = Field(..., max_length=150)
-    email: EmailStr
-    password: str = Field(..., min_length=6)
-    school_name: str | None = Field(default=None, max_length=200)
+from pydantic import BaseModel, Field
 
 
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class UserResponse(BaseModel):
-    id: UUID
-    full_name: str
-    email: EmailStr
-    school_name: str | None
-    role: str
-
-    model_config = {"from_attributes": True}
-
-
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+class AuthHealthResponse(BaseModel):
+    status: str = Field(..., description="Operational status of the auth boundary.")
+    mode: str = Field(..., description="Current auth mode for this phase.")
+    implemented_boundaries: list[str] = Field(
+        ...,
+        description="Auth-related surfaces that already exist in the foundation.",
+    )
+    deferred_flows: list[str] = Field(
+        ...,
+        description="Auth flows intentionally postponed to later phases.",
+    )

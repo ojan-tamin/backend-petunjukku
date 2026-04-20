@@ -1,3 +1,5 @@
+"""SQLAlchemy models for the backend foundation."""
+
 from app.models.ai_log import AILog
 from app.models.audio_record import AudioRecord
 from app.models.generated_document import GeneratedDocument
@@ -7,11 +9,11 @@ from app.models.studio_session import StudioSession
 from app.models.user import User
 
 __all__ = [
-    "User",
-    "StudioSession",
-    "StudioMessage",
-    "PlanningState",
-    "GeneratedDocument",
-    "AudioRecord",
     "AILog",
+    "AudioRecord",
+    "GeneratedDocument",
+    "PlanningState",
+    "StudioMessage",
+    "StudioSession",
+    "User",
 ]

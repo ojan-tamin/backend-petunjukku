@@ -1,58 +1,52 @@
-import uuid
-from datetime import datetime
+"""Audio record model for future voice workflows."""
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from __future__ import annotations
+
+from uuid import UUID
+
+from sqlalchemy import Enum, ForeignKey, Integer, JSON, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
-from app.models.enums import TranscriptionStatusEnum
+from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.models.enums import AudioTranscriptionStatusEnum
 
 
-class AudioRecord(Base):
+class AudioRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "audio_records"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    session_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+    session_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
         ForeignKey("studio_sessions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    message_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("studio_messages.id", ondelete="SET NULL"),
+    uploaded_by_user_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
-        unique=True,
     )
-    file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    storage_uri: Mapped[str] = mapped_column(String(500), nullable=False)
     mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    transcript_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    transcription_status: Mapped[TranscriptionStatusEnum] = mapped_column(
+    transcription_status: Mapped[AudioTranscriptionStatusEnum] = mapped_column(
         Enum(
-            TranscriptionStatusEnum,
-            name="transcription_status_enum",
-            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            AudioTranscriptionStatusEnum,
+            name="audio_transcription_status_enum",
+            native_enum=False,
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
         ),
         nullable=False,
-        default=TranscriptionStatusEnum.PENDING,
-        server_default=TranscriptionStatusEnum.PENDING.value,
+        default=AudioTranscriptionStatusEnum.PENDING,
+        server_default=AudioTranscriptionStatusEnum.PENDING.value,
     )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
+    transcript_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    transcript_metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
     session: Mapped["StudioSession"] = relationship(
-        "StudioSession", back_populates="audio_records"
+        "StudioSession",
+        back_populates="audio_records",
     )
-    message: Mapped["StudioMessage | None"] = relationship(
-        "StudioMessage", back_populates="audio_record"
+    uploaded_by_user: Mapped["User | None"] = relationship(
+        "User",
+        back_populates="audio_records",
     )

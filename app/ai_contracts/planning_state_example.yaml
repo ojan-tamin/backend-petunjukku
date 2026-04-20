@@ -1,0 +1,17 @@
+workflow_type: "pjbl"
+current_stage: "pjbl_context_foundation"
+collected_fields: {}
+missing_fields:
+  - "education_level"
+  - "phase"
+  - "grade_level"
+  - "subject_or_theme"
+  - "topic"
+  - "duration"
+  - "school_context"
+  - "student_characteristics"
+  - "project_theme"
+completion_score: 0
+is_ready_for_summary: false
+is_ready_for_generation: false
+version: 1

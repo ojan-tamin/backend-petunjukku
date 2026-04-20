@@ -1,39 +1,45 @@
-import uuid
-from datetime import datetime
+"""User model reserved for future auth ownership and session scoping."""
 
-from sqlalchemy import DateTime, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from __future__ import annotations
+
+from sqlalchemy import Boolean, String, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
-class User(Base):
+class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    full_name: Mapped[str] = mapped_column(String(150), nullable=False)
     email: Mapped[str] = mapped_column(
-        String(150), nullable=False, unique=True, index=True
-    )
-    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
-    school_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    role: Mapped[str] = mapped_column(String(50), nullable=False, default="teacher")
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        String(255),
         nullable=False,
-        server_default=func.now(),
+        unique=True,
+        index=True,
     )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+    display_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    auth_provider: Mapped[str] = mapped_column(
+        String(64),
         nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
+        default="deferred",
+        server_default="deferred",
+    )
+    external_subject: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        unique=True,
+    )
+    role: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="teacher",
+        server_default="teacher",
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=true(),
     )
 
     studio_sessions: Mapped[list["StudioSession"]] = relationship(
@@ -41,9 +47,12 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
-
     generated_documents: Mapped[list["GeneratedDocument"]] = relationship(
         "GeneratedDocument",
         back_populates="user",
         cascade="all, delete-orphan",
+    )
+    audio_records: Mapped[list["AudioRecord"]] = relationship(
+        "AudioRecord",
+        back_populates="uploaded_by_user",
     )

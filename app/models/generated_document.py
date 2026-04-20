@@ -1,55 +1,55 @@
-import uuid
-from datetime import datetime
+"""Generated document model for future exports and summaries."""
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from __future__ import annotations
+
+from uuid import UUID
+
+from sqlalchemy import Enum, ForeignKey, Integer, JSON, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
-from app.models.enums import DocumentStatusEnum, DocumentTypeEnum
+from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.models.enums import GeneratedDocumentKindEnum, GeneratedDocumentStatusEnum
 
 
-class GeneratedDocument(Base):
+class GeneratedDocument(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "generated_documents"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    session_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+    session_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
         ForeignKey("studio_sessions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+    user_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    document_type: Mapped[DocumentTypeEnum] = mapped_column(
+    kind: Mapped[GeneratedDocumentKindEnum] = mapped_column(
         Enum(
-            DocumentTypeEnum,
-            name="document_type_enum",
-            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            GeneratedDocumentKindEnum,
+            name="generated_document_kind_enum",
+            native_enum=False,
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
         ),
         nullable=False,
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
-    content_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    content_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[DocumentStatusEnum] = mapped_column(
+    status: Mapped[GeneratedDocumentStatusEnum] = mapped_column(
         Enum(
-            DocumentStatusEnum,
-            name="document_status_enum",
-            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            GeneratedDocumentStatusEnum,
+            name="generated_document_status_enum",
+            native_enum=False,
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
         ),
         nullable=False,
-        default=DocumentStatusEnum.DRAFT,
-        server_default=DocumentStatusEnum.DRAFT.value,
+        default=GeneratedDocumentStatusEnum.DRAFT,
+        server_default=GeneratedDocumentStatusEnum.DRAFT.value,
     )
+    content_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    content_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    storage_uri: Mapped[str | None] = mapped_column(String(500), nullable=True)
     version: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -63,19 +63,8 @@ class GeneratedDocument(Base):
         server_default="1",
     )
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
-
     session: Mapped["StudioSession"] = relationship(
-        "StudioSession", back_populates="generated_documents"
+        "StudioSession",
+        back_populates="generated_documents",
     )
     user: Mapped["User"] = relationship("User", back_populates="generated_documents")

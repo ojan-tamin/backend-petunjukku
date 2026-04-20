@@ -1,40 +1,54 @@
-from datetime import datetime, timedelta, timezone
-from typing import Any
+"""Minimal security utilities reserved for future auth work."""
 
-from jose import jwt
-from passlib.context import CryptContext
+from __future__ import annotations
 
-from app.core.config import settings
+import base64
+import hashlib
+import hmac
+import secrets
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+SECRET_HASH_SCHEME = "pbkdf2_sha256"
+SECRET_HASH_ITERATIONS = 600_000
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+def _urlsafe_b64encode(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
 
 
-def create_access_token(
-    subject: str | Any, expires_delta: timedelta | None = None
-) -> str:
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(
-            minutes=settings.access_token_expire_minutes
-        )
+def _urlsafe_b64decode(raw: str) -> bytes:
+    padding = "=" * (-len(raw) % 4)
+    return base64.urlsafe_b64decode(raw + padding)
 
-    to_encode = {
-        "sub": str(subject),
-        "exp": expire,
-    }
 
-    encoded_jwt = jwt.encode(
-        to_encode,
-        settings.secret_key,
-        algorithm=settings.algorithm,
+def hash_secret(secret: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        secret.encode("utf-8"),
+        salt,
+        SECRET_HASH_ITERATIONS,
     )
-    return encoded_jwt
+    return (
+        f"{SECRET_HASH_SCHEME}${SECRET_HASH_ITERATIONS}"
+        f"${_urlsafe_b64encode(salt)}${_urlsafe_b64encode(digest)}"
+    )
+
+
+def verify_secret(secret: str, encoded_secret: str) -> bool:
+    try:
+        scheme, iteration_text, salt_text, digest_text = encoded_secret.split("$", 3)
+        if scheme != SECRET_HASH_SCHEME:
+            return False
+        iterations = int(iteration_text)
+        salt = _urlsafe_b64decode(salt_text)
+        expected_digest = _urlsafe_b64decode(digest_text)
+    except (ValueError, TypeError):
+        return False
+
+    actual_digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        secret.encode("utf-8"),
+        salt,
+        iterations,
+    )
+    return hmac.compare_digest(actual_digest, expected_digest)

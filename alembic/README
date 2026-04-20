@@ -1,1 +1,14 @@
-Generic single-database configuration.
+Alembic configuration for the backend-petunjukku foundation.
+
+The baseline revision creates the initial relational schema for:
+
+- users
+- studio_sessions
+- planning_states
+- studio_messages
+- generated_documents
+- audio_records
+- ai_logs
+
+The migration environment reads database settings from `app/core/config.py`
+and imports model metadata from `app/db/base.py` and `app/models/__init__.py`.

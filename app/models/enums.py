@@ -1,38 +1,55 @@
-import enum
+"""Domain enums for the backend foundation."""
+
+from __future__ import annotations
+
+from enum import Enum
 
 
-class DocumentTypeEnum(str, enum.Enum):
+class WorkflowTypeEnum(str, Enum):
     INTRAKURIKULER = "intrakurikuler"
     PJBL = "pjbl"
 
 
-class SessionStatusEnum(str, enum.Enum):
+class SessionStatusEnum(str, Enum):
     ACTIVE = "active"
-    REVIEW = "review"
+    PAUSED = "paused"
     COMPLETED = "completed"
     ARCHIVED = "archived"
 
 
-class SenderTypeEnum(str, enum.Enum):
+class MessageSenderEnum(str, Enum):
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
 
 
-class MessageTypeEnum(str, enum.Enum):
+class MessageTypeEnum(str, Enum):
     TEXT = "text"
-    VOICE_TRANSCRIPT = "voice_transcript"
     SUMMARY = "summary"
-    REVISION_NOTE = "revision_note"
+    TOOL_RESULT = "tool_result"
+    NOTE = "note"
 
 
-class DocumentStatusEnum(str, enum.Enum):
+class GeneratedDocumentKindEnum(str, Enum):
+    LESSON_PLAN = "lesson_plan"
+    PROJECT_PLAN = "project_plan"
+    SUMMARY = "summary"
+
+
+class GeneratedDocumentStatusEnum(str, Enum):
     DRAFT = "draft"
+    READY = "ready"
     FINAL = "final"
-    REVISED = "revised"
+    FAILED = "failed"
 
 
-class TranscriptionStatusEnum(str, enum.Enum):
+class AudioTranscriptionStatusEnum(str, Enum):
     PENDING = "pending"
-    SUCCESS = "success"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class AIInteractionStatusEnum(str, Enum):
+    PENDING = "pending"
+    SUCCEEDED = "succeeded"
     FAILED = "failed"
