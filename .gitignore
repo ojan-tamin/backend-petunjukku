@@ -1,0 +1,12 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.db
+*.sqlite
+*.sqlite3
+uploads/
+.local_llm_models/
+.local_llm_offload/
+.local_llm_offload_test/
+uvicorn.*.log
