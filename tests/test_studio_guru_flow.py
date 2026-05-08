@@ -126,8 +126,8 @@ def test_intrakurikuler_chat_summary_generate_and_documents(client, mock_flow_in
     assert [message["role"] for message in messages.json()].count("user") == 5
     assert [message["role"] for message in messages.json()].count("assistant") == 5
     assert mock_flow_intra_ai.turn_calls == 5
-    assert mock_flow_intra_ai.summary_calls == 1
-    assert mock_flow_intra_ai.document_calls == 1
+    assert mock_flow_intra_ai.summary_calls == 0
+    assert mock_flow_intra_ai.document_calls == 0
 
 
 def test_llm_config_uses_project_a_openrouter_defaults(monkeypatch):

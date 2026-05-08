@@ -14,7 +14,6 @@ from app.models.generated_document import GeneratedDocument
 from app.models.studio_session import StudioSession
 from app.models.user import User
 from app.schemas.summary import SummaryResponse
-from app.services.flow_intra_ai_service import FlowIntraAIError, get_flow_intra_ai_service
 from app.services.session_service import require_session
 
 
@@ -26,19 +25,7 @@ def build_session_summary(db: Session, user: User, session_id: UUID) -> SummaryR
 
     fields = planning_state.collected_fields or {}
     missing = list(planning_state.missing_fields or [])
-    if planning_state.workflow_type == "intrakurikuler":
-        try:
-            summary = get_flow_intra_ai_service().generate_summary(
-                collected_fields=fields,
-                missing_fields=missing,
-            )
-        except FlowIntraAIError as exc:
-            raise HTTPException(
-                status_code=getattr(exc, "status_code", 503),
-                detail=getattr(exc, "public_detail", "AI Flow Intra service is unavailable"),
-            ) from exc
-    else:
-        summary = build_summary_text(planning_state.workflow_type, fields, missing)
+    summary = build_summary_text(planning_state.workflow_type, fields, missing)
 
     return SummaryResponse(
         session_id=session.id,
@@ -64,17 +51,7 @@ def generate_document(db: Session, user: User, session_id: UUID) -> GeneratedDoc
     if session.document_type.value == "pjbl":
         generated = generate_pjbl_document(fields)
     else:
-        try:
-            generated = get_flow_intra_ai_service().generate_intrakurikuler_document(
-                collected_fields=fields,
-            )
-        except FlowIntraAIError as exc:
-            raise HTTPException(
-                status_code=getattr(exc, "status_code", 503),
-                detail=getattr(exc, "public_detail", "AI Flow Intra service is unavailable"),
-            ) from exc
-        if not generated.get("content"):
-            generated = generate_intrakurikuler_document_template(fields)
+        generated = generate_intrakurikuler_document_template(fields)
 
     document = GeneratedDocument(
         session_id=session.id,

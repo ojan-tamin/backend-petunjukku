@@ -244,4 +244,5 @@ class FlowIntraAIService:
 
 
 def get_flow_intra_ai_service() -> FlowIntraAIService:
+    
     return FlowIntraAIService()

@@ -107,8 +107,4 @@ def mock_flow_intra_ai(monkeypatch):
         "app.services.message_service.get_flow_intra_ai_service",
         lambda: service,
     )
-    monkeypatch.setattr(
-        "app.services.document_service.get_flow_intra_ai_service",
-        lambda: service,
-    )
     return service
